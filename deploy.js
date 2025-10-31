@@ -114,8 +114,24 @@ async function triggerVercelDeployment({ vercelToken, owner, repo, name }) {
     'Content-Type': 'application/json'
   };
 
-  const resp = await axios.post(url, body, { headers });
+  let resp;
+  try {
+    resp = await axios.post(url, body, { headers });
+  } catch (err) {
+    // Log detailed Vercel error for debugging
+    const status = err.response?.status;
+    const data = err.response?.data;
+    console.error('Vercel API error. Status:', status);
+    try {
+      console.error('Vercel response body:', JSON.stringify(data, null, 2));
+    } catch (e) {
+      console.error('Vercel response body (raw):', data);
+    }
+    throw new Error('Failed to start Vercel deployment: ' + (err.message || status));
+  }
   if (!(resp.status >= 200 && resp.status < 300)) {
+    console.error('Vercel returned non-2xx status:', resp.status);
+    console.error('Vercel response body:', JSON.stringify(resp.data, null, 2));
     throw new Error('Failed to start Vercel deployment: ' + JSON.stringify(resp.data));
   }
   const deployment = resp.data;
