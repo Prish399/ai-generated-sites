@@ -86,6 +86,20 @@ export default function AISandboxPage() {
   const [sandboxFiles, setSandboxFiles] = useState<Record<string, string>>({});
   const [fileStructure, setFileStructure] = useState<string>('');
   
+  const [deploymentState, setDeploymentState] = useState<{
+    isDeploying: boolean;
+    status: string;
+    deploymentUrl: string | null;
+    repoUrl: string | null;
+    error: string | null;
+  }>({
+    isDeploying: false,
+    status: '',
+    deploymentUrl: null,
+    repoUrl: null,
+    error: null
+  });
+
   const [conversationContext, setConversationContext] = useState<{
     scrapedWebsites: Array<{ url: string; content: any; timestamp: Date }>;
     generatedComponents: Array<{ name: string; path: string; content: string }>;
@@ -133,6 +147,80 @@ export default function AISandboxPage() {
     files: [],
     lastProcessedPosition: 0
   });
+
+  // Deploy generated site to GitHub and Vercel
+  const deployGeneratedSite = async () => {
+    if (!sandboxData) {
+      alert('No sandbox found. Please generate code first.');
+      return;
+    }
+
+    setDeploymentState({
+      isDeploying: true,
+      status: 'Starting deployment...',
+      deploymentUrl: null,
+      repoUrl: null,
+      error: null
+    });
+
+    try {
+      setDeploymentState(prev => ({ ...prev, status: 'Connecting to GitHub...' }));
+      
+      const response = await fetch('/api/deploy-generated-site', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sandboxId: sandboxData.sandboxId,
+          sandboxUrl: sandboxData.url
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Deployment failed');
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        setDeploymentState({
+          isDeploying: false,
+          status: 'Deployment completed!',
+          deploymentUrl: result.deploymentUrl,
+          repoUrl: result.repoUrl,
+          error: null
+        });
+
+        // Add success message to chat
+        addChatMessage(
+          `🚀 Successfully deployed! Your site is live at:\n${result.deploymentUrl}\n\nRepository: ${result.repoUrl}`,
+          'system'
+        );
+
+        // Copy URL to clipboard
+        if (result.deploymentUrl) {
+          navigator.clipboard.writeText(result.deploymentUrl).catch(() => {
+            // Silently fail if clipboard not available
+          });
+        }
+      } else {
+        throw new Error(result.error || 'Deployment failed');
+      }
+    } catch (error: any) {
+      console.error('[deployGeneratedSite] Error:', error);
+      const errorMessage = error.message || 'Deployment failed. Please check your tokens and try again.';
+      
+      setDeploymentState({
+        isDeploying: false,
+        status: 'Deployment failed',
+        deploymentUrl: null,
+        repoUrl: null,
+        error: errorMessage
+      });
+
+      addChatMessage(`❌ Deployment failed: ${errorMessage}`, 'error');
+    }
+  };
 
   // Clear old conversation data on component mount and create/restore sandbox
   useEffect(() => {
@@ -3364,6 +3452,51 @@ Focus on creating a beautiful, functional application that matches the user's vi
                       </>
                     )}
                   </div>
+                </div>
+              )}
+              {/* Deploy to GitHub & Vercel Button */}
+              {sandboxData && !generationProgress.isGenerating && generationProgress.files.length > 0 && (
+                <button
+                  onClick={deployGeneratedSite}
+                  disabled={deploymentState.isDeploying}
+                  className="inline-flex items-center justify-center gap-2 px-3 py-1 h-8 text-sm whitespace-nowrap rounded-[10px] font-medium bg-green-600 text-white hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed transition-all duration-200 [box-shadow:inset_0px_-2px_0px_0px_rgba(0,0,0,0.2),_0px_1px_6px_0px_rgba(34,197,94,0.3)] hover:translate-y-[1px] hover:scale-[0.98] hover:[box-shadow:inset_0px_-1px_0px_0px_rgba(0,0,0,0.2),_0px_1px_3px_0px_rgba(34,197,94,0.2)] active:translate-y-[2px] active:scale-[0.97]"
+                  title={deploymentState.isDeploying ? 'Deploying...' : 'Push to GitHub and deploy to Vercel'}
+                >
+                  {deploymentState.isDeploying ? (
+                    <>
+                      <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Deploying...
+                    </>
+                  ) : (
+                    <>
+                      <FiGithub className="w-4 h-4" />
+                      Deploy
+                    </>
+                  )}
+                </button>
+              )}
+              {/* Show deployment success status */}
+              {deploymentState.deploymentUrl && !deploymentState.isDeploying && (
+                <div className="flex items-center gap-2 px-3 py-1 h-8 text-sm rounded-[10px] bg-green-100 text-green-800 border border-green-300">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                  </svg>
+                  <a 
+                    href={deploymentState.deploymentUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="hover:underline font-medium"
+                  >
+                    Live ↗
+                  </a>
+                </div>
+              )}
+              {deploymentState.error && (
+                <div className="flex items-center gap-2 px-3 py-1 h-8 text-sm rounded-[10px] bg-red-100 text-red-800 border border-red-300">
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                  Error
                 </div>
               )}
               {sandboxData && !generationProgress.isGenerating && (
