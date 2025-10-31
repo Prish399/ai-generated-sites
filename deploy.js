@@ -154,15 +154,23 @@ async function main() {
   try {
     const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
     const VERCEL_TOKEN = process.env.VERCEL_TOKEN;
-    if (!GITHUB_TOKEN) throw new Error('Missing GITHUB_TOKEN in environment');
+    const GITHUB_USERNAME = process.env.GITHUB_USERNAME;
+
     if (!VERCEL_TOKEN) throw new Error('Missing VERCEL_TOKEN in environment');
 
-    const username = await getGithubUsername(GITHUB_TOKEN);
-    console.log('Using GitHub username:', username);
+    let username = GITHUB_USERNAME;
 
-    await ensureGithubRepo(GITHUB_TOKEN, username, repoName);
-
-    await pushCodeToGitHub({ githubToken: GITHUB_TOKEN, owner: username, repo: repoName, branch: 'main' });
+    if (GITHUB_TOKEN) {
+      // If token is provided, determine username and ensure repo + push
+      username = await getGithubUsername(GITHUB_TOKEN);
+      console.log('Using GitHub username:', username);
+      await ensureGithubRepo(GITHUB_TOKEN, username, repoName);
+      await pushCodeToGitHub({ githubToken: GITHUB_TOKEN, owner: username, repo: repoName, branch: 'main' });
+    } else {
+      // No token provided: only proceed if username is set and repo already exists
+      if (!username) throw new Error('Missing GITHUB_TOKEN and GITHUB_USERNAME; provide one to proceed.');
+      console.log('GITHUB_TOKEN not provided — skipping GitHub push. Using username:', username);
+    }
 
     const live = await triggerVercelDeployment({ vercelToken: VERCEL_TOKEN, owner: username, repo: repoName, name: repoName });
     console.log('\n✅ Deployment finished. Live URL:', live);
