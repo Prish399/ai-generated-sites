@@ -104,7 +104,8 @@ async function triggerVercelDeployment({ vercelToken, owner, repo, name }) {
     name,
     gitSource: {
       type: 'github',
-      repoId: `${owner}/${repo}`
+      repoId: `${owner}/${repo}`,
+      ref: 'main'
     },
     target: 'production'
   };
