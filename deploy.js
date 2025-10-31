@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import simpleGit from 'simple-git';
 import axios from 'axios';
+import { exec } from 'child_process';
 
 const git = simpleGit();
 const repoName = 'ai-generated-sites';
@@ -128,6 +129,14 @@ async function triggerVercelDeployment({ vercelToken, owner, repo, name }) {
     } catch (e) {
       console.error('Vercel response body (raw):', data);
     }
+
+    // If the error indicates Vercel can't access the GitHub repo, fall back to Vercel CLI deployment
+    const code = data?.error?.code;
+    if (code === 'incorrect_git_source_info' || (data?.error?.message || '').includes("can't be found")) {
+      console.log('Falling back to Vercel CLI deploy (uploads project files directly). This may take a bit...');
+      return await runVercelCLI(vercelToken, name);
+    }
+
     throw new Error('Failed to start Vercel deployment: ' + (err.message || status));
   }
   if (!(resp.status >= 200 && resp.status < 300)) {
@@ -165,6 +174,33 @@ async function triggerVercelDeployment({ vercelToken, owner, repo, name }) {
     await sleep(3000);
   }
   throw new Error('Timed out waiting for Vercel deployment to become ready.');
+}
+
+function runVercelCLI(vercelToken, projectName) {
+  return new Promise((resolve, reject) => {
+    const cmd = `npx --yes vercel --prod --confirm --token ${vercelToken} --name ${projectName}`;
+    console.log('Running:', cmd);
+    const cp = exec(cmd, { cwd: process.cwd(), maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Vercel CLI failed:', stderr || error.message);
+        return reject(new Error('Vercel CLI deploy failed: ' + (stderr || error.message)));
+      }
+      // Parse stdout for a URL
+      const urlMatch = stdout.match(/https?:\/\/[^\s]+vercel\.app/);
+      if (urlMatch) {
+        const live = urlMatch[0];
+        console.log('🌐 Live site URL (from Vercel CLI):', live);
+        return resolve(live);
+      }
+      // If not found, return stdout for debugging
+      console.log('Vercel CLI output:\n', stdout);
+      return resolve(null);
+    });
+
+    // stream output to console
+    cp.stdout?.pipe(process.stdout);
+    cp.stderr?.pipe(process.stderr);
+  });
 }
 
 async function main() {
